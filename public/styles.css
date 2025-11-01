@@ -1,0 +1,16 @@
+:root { font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.4; }
+body { margin: 0; background: #fafafa; color: #111; }
+.container { max-width: 720px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.5rem; margin: 12px 0 16px; }
+.card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; display: grid; gap: 10px; }
+label { display: grid; gap: 6px; font-size: 0.9rem; }
+input, select, button { font-size: 1rem; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; }
+button { cursor: pointer; }
+.status { margin: 12px 4px; color: #334155; }
+.results { display: grid; gap: 12px; margin: 8px 0 24px; }
+.job { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.job-title { margin: 0 0 4px; font-size: 1.05rem; }
+.job-title a { text-decoration: none; }
+.meta { color: #475569; margin: 0 0 6px; font-size: 0.9rem; }
+.snippet { margin: 0; color: #374151; }
+.pager { text-align: center; margin: 8px 0 24px; }
