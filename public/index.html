@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Job Finder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Find jobs near you</h1>
+
+    <form id="searchForm" class="card">
+      <label>
+        Job title
+        <input id="title" name="title" placeholder="e.g., Product Manager" required />
+      </label>
+
+      <label>
+        ZIP code
+        <input id="zip" name="zip" placeholder="e.g., 94612" inputmode="numeric" pattern="\\d{5}" required />
+      </label>
+
+      <label>
+        Radius
+        <select id="radius" name="radius">
+          <option value="5">5 miles</option>
+          <option value="10">10 miles</option>
+          <option value="25" selected>25 miles</option>
+          <option value="50">50 miles</option>
+          <option value="100">100 miles</option>
+        </select>
+      </label>
+
+      <label>
+        Posted within
+        <select id="days" name="days">
+          <option value="1">Last 24 hours</option>
+          <option value="3" selected>Last 3 days</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="0">Any time</option>
+        </select>
+      </label>
+
+      <button id="go" type="submit">Search</button>
+    </form>
+
+    <section id="status" class="status" aria-live="polite"></section>
+    <section id="results" class="results"></section>
+    <div id="pager" class="pager" hidden>
+      <button id="loadMore" type="button">Load more</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
