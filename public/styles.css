@@ -14,3 +14,11 @@ button { cursor: pointer; }
 .meta { color: #475569; margin: 0 0 6px; font-size: 0.9rem; }
 .snippet { margin: 0; color: #374151; }
 .pager { text-align: center; margin: 8px 0 24px; }
+
+.attribution {
+  display: flex; align-items: center; gap: 6px;
+  justify-content: center; padding: 12px 0 24px; color: #475569;
+  font-size: 0.9rem;
+}
+.adzuna-jobs-link, .adzuna-logo-link { display: inline-flex; align-items: center; }
+.adzuna-logo-link img { width: 116px; height: 23px; object-fit: contain; }
