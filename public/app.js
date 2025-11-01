@@ -18,7 +18,6 @@ function renderJobs(items, append=false) {
     const loc = escapeHTML(j.location || '');
     const title = escapeHTML(j.title || '');
     const company = escapeHTML(j.company || '');
-    const distance = j.distance ? `${j.distance} mi` : '';
     const posted = j.posted ? new Date(j.posted).toLocaleDateString() : '';
     return `
       <article class="job">
@@ -27,9 +26,7 @@ function renderJobs(items, append=false) {
           ${company ? `<span>${company}</span>` : ''} 
           ${company && loc ? '·' : ''} 
           ${loc ? `<span>${loc}</span>` : ''}
-          ${(company || loc) && (distance || posted) ? ' · ' : ''}
-          ${distance ? `<span>${distance}</span>` : ''} 
-          ${distance && posted ? ' · ' : ''} 
+          ${posted ? ' · ' : ''} 
           ${posted ? `<span>${posted}</span>` : ''}
         </p>
         ${snippet ? `<p class="snippet">${snippet}</p>` : ''}
@@ -58,12 +55,16 @@ async function runSearch(q, { append = false } = {}) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
 
-    statusEl.textContent = `Showing ${Math.min(data.page*data.pageSize, data.total)} of ${data.total} ${data.source || ''}`.trim();
+    const total = Number.isFinite(+data.total) ? +data.total : null;
+    if (total) {
+      statusEl.textContent = `Showing ${Math.min(data.page * data.pageSize, total)} of ${total} ${data.source || ''}`.trim();
+    } else {
+      statusEl.textContent = `Showing ${data.jobs?.length || 0} results ${data.source ? `from ${data.source}` : ''}`.trim();
+    }
+
     renderJobs(data.jobs || [], append);
 
-    // basic paging
-    const shown = data.page * data.pageSize;
-    if (shown < data.total) {
+    if (total && data.page * data.pageSize < total) {
       pagerEl.hidden = false;
       loadMoreBtn.onclick = () => { page += 1; runSearch(q, { append: true }); };
     } else {
@@ -78,7 +79,6 @@ async function runSearch(q, { append = false } = {}) {
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  // capture form values
   const title = document.getElementById('title').value.trim();
   const zip = document.getElementById('zip').value.trim();
   const radius = parseInt(document.getElementById('radius').value, 10);
