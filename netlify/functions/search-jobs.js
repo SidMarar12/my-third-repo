@@ -1,14 +1,18 @@
 // netlify/functions/search-jobs.js
-// Server-side proxy to CareerOneStop Jobs V2 API (US Dept. of Labor).
+// Server-side proxy to Adzuna Jobs API.
+// Inputs (query params): title, zip, radius (miles), days (0=any), page, pageSize
+// Env vars required: ADZUNA_APP_ID, ADZUNA_APP_KEY
+// Optional: ADZUNA_COUNTRY (default "us")
 
-const REQUIRED_ENV = ["COS_API_TOKEN", "COS_USER_ID"];
+const REQUIRED_ENV = ["ADZUNA_APP_ID", "ADZUNA_APP_KEY"];
 
 exports.handler = async (event) => {
-  try {
-    // Basic CORS for same-origin usage from your site
-    const cors = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json",
+  };
 
-    // Validate env
+  try {
     for (const k of REQUIRED_ENV) {
       if (!process.env[k]) {
         return {
@@ -25,7 +29,7 @@ exports.handler = async (event) => {
     const radiusMiles = parseInt(params.radius || "25", 10);
     const days = parseInt(params.days || "7", 10);
     const page = Math.max(1, parseInt(params.page || "1", 10));
-    const pageSize = Math.min(50, Math.max(1, parseInt(params.pageSize || "25", 10))); // cap at 50
+    const pageSize = Math.min(50, Math.max(1, parseInt(params.pageSize || "25", 10))); // defensive cap
 
     if (!title) {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Missing 'title'." }) };
@@ -37,78 +41,69 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Invalid 'radius' (miles)." }) };
     }
     if (Number.isNaN(days) || days < 0 || days > 60) {
-      // API allows 0 to get all; reasonable cap 60 days
       return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "Invalid 'days' (0–60)." }) };
     }
 
-    const userId = process.env.COS_USER_ID;
-    const token = process.env.COS_API_TOKEN;
-    const sortCol = "acquisitiondate"; // most recent first
-    const sortOrder = "desc";
-    const startRecord = (page - 1) * pageSize;
+    const country = (process.env.ADZUNA_COUNTRY || "us").toLowerCase();
+    const km = Math.max(1, Math.round(radiusMiles * 1.60934)); // miles -> km
 
-    // Endpoint shape:
-    // /v2/jobsearch/{userId}/{keyword}/{location}/{radius}/{sortColumns}/{sortOrder}/{startRecord}/{pageSize}/{days}
-    const base = "https://api.careeronestop.org/v2/jobsearch";
-    const path = [
-      encodeURIComponent(userId),
-      encodeURIComponent(title),
-      encodeURIComponent(zip),
-      encodeURIComponent(String(radiusMiles)),
-      encodeURIComponent(sortCol),
-      encodeURIComponent(sortOrder),
-      encodeURIComponent(String(startRecord)),
-      encodeURIComponent(String(pageSize)),
-      encodeURIComponent(String(days)),
-    ].join("/");
-
-    const url = `${base}/${path}?enableJobDescriptionSnippet=true&enableMetaData=false`;
-
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
+    // Build query
+    const qs = new URLSearchParams({
+      app_id: process.env.ADZUNA_APP_ID,
+      app_key: process.env.ADZUNA_APP_KEY,
+      results_per_page: String(pageSize),
+      what: title,
+      where: zip,
+      distance: String(km),
+      sort_by: "date",
+      "content-type": "application/json",
     });
+    if (days > 0) qs.set("max_days_old", String(days));
 
+    const url = `https://api.adzuna.com/v1/api/jobs/${encodeURIComponent(country)}/search/${page}?${qs.toString()}`;
+
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       return {
         statusCode: res.status,
         headers: cors,
-        body: JSON.stringify({ error: "Upstream error", details: text.slice(0, 500) }),
+        body: JSON.stringify({ error: "Upstream error", details: text.slice(0, 1000) }),
       };
     }
 
-    const data = await res.json();
+    const data = JSON.parse(text);
+    const results = Array.isArray(data.results) ? data.results : [];
 
-    const jobs = (data.Jobs || []).map((j) => ({
-      id: j.JvId,
-      title: j.JobTitle,
-      company: j.Company,
-      location: j.Location,            // e.g., "Oakland, CA"
-      distance: j.Distance,            // miles as string per API
-      posted: j.AcquisitionDate,       // ISO-ish string from API
-      url: j.URL,                      // apply/details URL
-      snippet: j.DescriptionSnippet || "",
+    const jobs = results.map((j) => ({
+      id: j.id,
+      title: j.title,
+      company: j.company?.display_name || "",
+      location: j.location?.display_name || "",
+      posted: j.created,                          // ISO timestamp
+      url: j.redirect_url,                        // open externally
+      snippet: j.description || "",               // Adzuna provides a short snippet
+      // 'distance' not returned by API; we filter by it server-side
     }));
+
+    const total = Number.isFinite(+data.count) ? +data.count : jobs.length;
 
     return {
       statusCode: 200,
       headers: { ...cors, "Cache-Control": "no-store" },
       body: JSON.stringify({
-        total: parseInt(data.JobCount || "0", 10) || jobs.length,
+        total,
         page,
         pageSize,
         jobs,
-        source: "CareerOneStop",
+        source: "Adzuna",
       }),
     };
   } catch (err) {
     return {
       statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Server error", details: String(err).slice(0, 300) }),
+      headers: cors,
+      body: JSON.stringify({ error: "Server error", details: String(err).slice(0, 500) }),
     };
   }
 };
