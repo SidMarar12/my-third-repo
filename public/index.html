@@ -18,7 +18,15 @@
 
       <label>
         ZIP code
-        <input id="zip" name="zip" placeholder="e.g., 94612" inputmode="numeric" pattern="\\d{5}" required />
+        <input id="zip"
+       name="zip"
+       placeholder="e.g., 94612"
+       inputmode="numeric"
+       autocomplete="postal-code"
+       maxlength="5"
+       pattern="[0-9]{5}"
+       title="Enter a 5-digit ZIP (e.g., 94612)"
+       required />
       </label>
 
       <label>
