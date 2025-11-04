@@ -1,6 +1,6 @@
 // Aggregate job search across Adzuna + CareerOneStop + USAJOBS,
-// with normalization, dedupe, salary/date extraction, title-only filtering,
-// and corrected pagination signaling.
+// with normalization, dedupe, salary/date extraction, resilient title filtering,
+// and pagination signaling.
 //
 // Query params: title, zip, radius (miles), days (0=any),
 //               page, pageSize, sources=adzuna,cos,usajobs, titleStrict=0|1
@@ -18,12 +18,10 @@ function normalizeKey(s) {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\s]/g, '').trim();
 }
 function hostFromUrl(u) { try { return new URL(u).hostname.replace(/^www\./,''); } catch { return ''; } }
+function dedupeKey(j) { return [normalizeKey(j.title), normalizeKey(j.company), hostFromUrl(j.url), normalizeKey(j.location)].join('|'); }
 function dedupe(items) {
   const seen = new Set(); const out = [];
-  for (const j of items) {
-    const key = [normalizeKey(j.title), normalizeKey(j.company), hostFromUrl(j.url), normalizeKey(j.location)].join('|');
-    if (seen.has(key)) continue; seen.add(key); out.push(j);
-  }
+  for (const j of items) { const k = dedupeKey(j); if (seen.has(k)) continue; seen.add(k); out.push(j); }
   return out;
 }
 function fetchJSON(url, { headers = {}, timeout = DEFAULT_TIMEOUT_MS } = {}) {
@@ -117,15 +115,9 @@ async function fetchCOS(q, page, pageSize) {
 
   const sortCol = 'acquisitiondate', sortOrder = 'desc', startRecord = (page - 1) * pageSize;
   const parts = [
-    encodeURIComponent(userId),
-    encodeURIComponent(q.title),
-    encodeURIComponent(q.zip),
-    encodeURIComponent(String(q.radiusMiles)),
-    encodeURIComponent(sortCol),
-    encodeURIComponent(sortOrder),
-    encodeURIComponent(String(startRecord)),
-    encodeURIComponent(String(pageSize)),
-    encodeURIComponent(String(q.days))
+    encodeURIComponent(userId), encodeURIComponent(q.title), encodeURIComponent(q.zip),
+    encodeURIComponent(String(q.radiusMiles)), encodeURIComponent(sortCol), encodeURIComponent(sortOrder),
+    encodeURIComponent(String(startRecord)), encodeURIComponent(String(pageSize)), encodeURIComponent(String(q.days))
   ];
   const url = `https://api.careeronestop.org/v2/jobsearch/${parts.join('/')}?enableJobDescriptionSnippet=true&enableMetaData=false`;
 
@@ -133,7 +125,7 @@ async function fetchCOS(q, page, pageSize) {
     const d = await fetchJSON(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
     const arr = Array.isArray(d.Jobs) ? d.Jobs : [];
     const jobs = arr.map((x) => {
-      // CoS salary signals are inconsistent; try numeric min/max first, then text fields.
+      // CoS salary handling
       const nums = [
         Number(x.MinimumSalary), Number(x.SalaryMin), Number(x.WageMin),
         Number(x.MaximumSalary), Number(x.SalaryMax), Number(x.WageMax)
@@ -189,7 +181,6 @@ async function fetchUSAJOBS(q, page, pageSize) {
       const m = it.MatchedObjectDescriptor || {};
       const link = Array.isArray(m.ApplyURI) ? m.ApplyURI[0] : (m.PositionURI || '');
       const posted = m.PublicationStartDate || m.OpenDate || m.OpeningDate || '';
-      // Salary
       let salaryText = '';
       const rem = Array.isArray(m.PositionRemuneration) ? m.PositionRemuneration : [];
       if (rem.length) {
@@ -232,7 +223,7 @@ exports.handler = async (event) => {
     const page = Math.max(1, int(q.page || '1', 1));
     const pageSize = Math.min(50, Math.max(1, int(q.pageSize || '25', 25)));
     const sources = (q.sources || 'adzuna,cos,usajobs').split(',').map(s => s.trim().toLowerCase());
-    const titleStrict = String(q.titleStrict || '0') === '1';
+    const titleStrictRequested = String(q.titleStrict || '0') === '1'; // default relaxed
 
     if (!title) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing 'title'." }) };
     if (!/^\d{5}$/.test(zip)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'ZIP must be 5 digits.' }) };
@@ -260,17 +251,34 @@ exports.handler = async (event) => {
       }
     }
 
-    // Merge, optional title-only filter, then sort newest -> oldest
-    let merged = dedupe(all);
-    if (titleStrict) {
-      const needle = title.toLowerCase();
-      merged = merged.filter(j => (j.title || '').toLowerCase().includes(needle));
-    }
-    merged.sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
+    // Merge & sort newest -> oldest
+    const mergedAll = dedupe(all).sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
 
-    // We page at the provider level; each provider already received `page`.
-    // For the response body we just return the first `pageSize` after merge.
-    const jobsPage = merged.slice(0, pageSize);
+    // ---- Resilient title filtering ----
+    let titleStrictApplied = false;
+    let filtered = mergedAll;
+    if (titleStrictRequested) {
+      const needle = title.toLowerCase();
+      const strict = mergedAll.filter(j => (j.title || '').toLowerCase().includes(needle));
+
+      if (strict.length === 0 && mergedAll.length > 0) {
+        // No strict matches on this page; RELAX to avoid empty UI.
+        filtered = mergedAll;
+        titleStrictApplied = false;
+      } else if (strict.length > 0 && strict.length < Math.min(pageSize, 5)) {
+        // Too few strict matches; TOP-UP with relaxed results to fill the page.
+        const strictSet = new Set(strict.map(dedupeKey));
+        const extras = mergedAll.filter(j => !strictSet.has(dedupeKey(j)));
+        filtered = strict.concat(extras).slice(0, pageSize);
+        titleStrictApplied = true;
+      } else {
+        filtered = strict;
+        titleStrictApplied = true;
+      }
+    }
+
+    // Slice for the page response (providers already fetched their page)
+    const jobsPage = filtered.slice(0, pageSize);
 
     // Use the max provider reported total as an approximation to drive the pager.
     const approxTotal = providers.reduce((m, p) => Math.max(m, Number(p.total) || 0), 0);
@@ -285,6 +293,7 @@ exports.handler = async (event) => {
         jobs: jobsPage,
         providers,
         errors,
+        filters: { titleStrictRequested, titleStrictApplied },
         source: 'aggregated'
       })
     };
