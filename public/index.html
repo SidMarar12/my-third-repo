@@ -56,6 +56,17 @@
         </select>
       </div>
 
+      <!-- New: Match mode control -->
+      <div class="field">
+        <label>Match</label>
+        <div class="segmented" role="radiogroup" aria-label="Match mode">
+          <input type="radio" id="m-title" name="match" value="title" checked />
+          <label for="m-title">Title only</label>
+          <input type="radio" id="m-broad" name="match" value="broad" />
+          <label for="m-broad">Title + description</label>
+        </div>
+      </div>
+
       <button id="go" type="submit" class="button-primary">Search</button>
     </form>
 
