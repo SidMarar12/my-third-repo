@@ -8,40 +8,38 @@
 </head>
 <body>
   <main class="container">
-    <h1>Find jobs near you</h1>
+    <header class="header">
+      <h1>Find jobs near you</h1>
+      <p class="sub">Search by job title, ZIP, radius, and time window.</p>
+    </header>
 
     <form id="searchForm" class="card">
-      <label>
-        Job title
+      <div class="field">
+        <label for="title">Job title</label>
         <input id="title" name="title" placeholder="e.g., Product Manager" required />
-      </label>
+      </div>
 
-      <label>
-        ZIP code
-        <input id="zip"
-       name="zip"
-       placeholder="e.g., 94612"
-       inputmode="numeric"
-       autocomplete="postal-code"
-       maxlength="5"
-       pattern="[0-9]{5}"
-       title="Enter a 5-digit ZIP (e.g., 94612)"
-       required />
-      </label>
+      <div class="field two-col">
+        <div>
+          <label for="zip">ZIP code</label>
+          <input id="zip" name="zip" placeholder="e.g., 94612" inputmode="numeric"
+                 autocomplete="postal-code" maxlength="5" pattern="[0-9]{5}"
+                 title="Enter a 5-digit ZIP (e.g., 94612)" required />
+        </div>
+        <div>
+          <label for="radius">Radius</label>
+          <select id="radius" name="radius">
+            <option value="5">5 miles</option>
+            <option value="10">10 miles</option>
+            <option value="25" selected>25 miles</option>
+            <option value="50">50 miles</option>
+            <option value="100">100 miles</option>
+          </select>
+        </div>
+      </div>
 
-      <label>
-        Radius
-        <select id="radius" name="radius">
-          <option value="5">5 miles</option>
-          <option value="10">10 miles</option>
-          <option value="25" selected>25 miles</option>
-          <option value="50">50 miles</option>
-          <option value="100">100 miles</option>
-        </select>
-      </label>
-
-      <label>
-        Posted within
+      <div class="field">
+        <label for="days">Posted within</label>
         <select id="days" name="days">
           <option value="1">Last 24 hours</option>
           <option value="3" selected>Last 3 days</option>
@@ -49,15 +47,30 @@
           <option value="30">Last 30 days</option>
           <option value="0">Any time</option>
         </select>
-      </label>
+      </div>
 
-      <button id="go" type="submit">Search</button>
+      <button id="go" type="submit" class="button-primary">Search</button>
     </form>
 
     <section id="status" class="status" aria-live="polite"></section>
-    <section id="results" class="results"></section>
+
+    <section class="results-wrap">
+      <table class="jobs-table" aria-live="polite">
+        <thead>
+          <tr>
+            <th scope="col" class="col-job">Job</th>
+            <th scope="col" class="col-posted">Posted</th>
+            <th scope="col" class="col-salary">Salary</th>
+          </tr>
+        </thead>
+        <tbody id="results">
+          <!-- rows injected here -->
+        </tbody>
+      </table>
+    </section>
+
     <div id="pager" class="pager" hidden>
-      <button id="loadMore" type="button">Load more</button>
+      <button id="loadMore" type="button" class="button-secondary">Load more</button>
     </div>
   </main>
 
