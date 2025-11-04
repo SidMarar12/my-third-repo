@@ -3,14 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Job Finder</title>
+  <title>The Big Fish — Job Finder</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="container">
+  <main class="container" role="main">
     <header class="header">
       <h1>
-        Find <span class="bigfish" aria-label="The Big Fish">The Big Fish</span> near you
+        Find
+        <span class="bigfish" aria-label="The Big Fish">
+          <span class="fish-icon" aria-hidden="true"></span>
+          <span class="bigfish-text">The Big Fish</span>
+        </span>
+        near you
       </h1>
       <p class="sub">Search by job title, ZIP, radius, and time window.</p>
     </header>
@@ -67,6 +72,7 @@
         </thead>
         <tbody id="results"><!-- rows injected here --></tbody>
       </table>
+
       <div id="empty-state" class="empty" hidden>
         <div class="empty-emoji">🔎</div>
         <p class="empty-title">No results</p>
