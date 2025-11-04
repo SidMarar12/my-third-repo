@@ -38,6 +38,10 @@ function adzunaBadge() {
       </a>
     </span>`;
 }
+function fmtCompact(n) {
+  try { return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
+  catch { return String(n); }
+}
 
 // skeletons (first page only)
 function renderSkeletonRows(n = 4) {
@@ -90,12 +94,12 @@ function renderRows(items) {
 
 function updateStatus(total, providers) {
   const providerTxt = Array.isArray(providers) && providers.length
-    ? ' | ' + providers.map(p => `${p.source}:${p.total ?? 0}`).join(', ')
+    ? ' | ' + providers.map(p => `${p.source}:${fmtCompact(p.total ?? 0)}`).join(', ')
     : '';
   if (Number.isFinite(+total)) {
-    statusEl.textContent = `Showing ${Math.min(shown, +total)} of ${total}${providerTxt}`;
+    statusEl.textContent = `Showing ${fmtCompact(Math.min(shown, +total))} of ${fmtCompact(+total)}${providerTxt}`;
   } else {
-    statusEl.textContent = `Showing ${shown}${providerTxt}`;
+    statusEl.textContent = `Showing ${fmtCompact(shown)}${providerTxt}`;
   }
 }
 
@@ -111,6 +115,9 @@ async function runSearch(q, { append = false } = {}) {
     renderSkeletonRows(4);
   }
 
+  const match = (document.querySelector('input[name="match"]:checked')?.value || 'title');
+  const titleStrict = match === 'title' ? '1' : '0';
+
   const qs = new URLSearchParams({
     title: q.title,
     zip: q.zip,
@@ -118,7 +125,7 @@ async function runSearch(q, { append = false } = {}) {
     days: String(q.days),
     page: String(page),
     pageSize: String(pageSize),
-    // Default to RELAXED title matching. You can test strict by manually adding &titleStrict=1
+    titleStrict
   });
 
   try {
