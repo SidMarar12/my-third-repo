@@ -1,6 +1,5 @@
 // Aggregate job search across Adzuna + CareerOneStop + USAJOBS,
-// with normalization, dedupe, salary/date extraction, resilient title filtering,
-// and pagination signaling.
+// with normalization, de-dupe, salary/date extraction, and *honest* title-only filtering.
 //
 // Query params: title, zip, radius (miles), days (0=any),
 //               page, pageSize, sources=adzuna,cos,usajobs, titleStrict=0|1
@@ -60,6 +59,14 @@ function unitFromUSAJOBS(code = '') {
   return '';
 }
 function safeTime(iso) { const t = Date.parse(iso || ''); return Number.isFinite(t) ? t : 0; }
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function makePhraseRegex(phrase){
+  const words = (phrase || '').toLowerCase().trim().split(/\s+/).map(escapeRegExp).filter(Boolean);
+  if (!words.length) return null;
+  const sep = String.raw`[\s\-/·–—]*`;            // tolerate punctuation and hyphens between words
+  const pat = `\\b${words.join(sep)}\\b`;          // whole-word phrase match
+  try { return new RegExp(pat, 'i'); } catch { return null; }
+}
 
 // ---------- providers ----------
 async function fetchAdzuna(q, page, pageSize) {
@@ -125,7 +132,6 @@ async function fetchCOS(q, page, pageSize) {
     const d = await fetchJSON(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
     const arr = Array.isArray(d.Jobs) ? d.Jobs : [];
     const jobs = arr.map((x) => {
-      // CoS salary handling
       const nums = [
         Number(x.MinimumSalary), Number(x.SalaryMin), Number(x.WageMin),
         Number(x.MaximumSalary), Number(x.SalaryMax), Number(x.WageMax)
@@ -223,7 +229,7 @@ exports.handler = async (event) => {
     const page = Math.max(1, int(q.page || '1', 1));
     const pageSize = Math.min(50, Math.max(1, int(q.pageSize || '25', 25)));
     const sources = (q.sources || 'adzuna,cos,usajobs').split(',').map(s => s.trim().toLowerCase());
-    const titleStrictRequested = String(q.titleStrict || '0') === '1'; // default relaxed
+    const titleStrictRequested = String(q.titleStrict || '0') === '1'; // strict title filter if true
 
     if (!title) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing 'title'." }) };
     if (!/^\d{5}$/.test(zip)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'ZIP must be 5 digits.' }) };
@@ -254,33 +260,22 @@ exports.handler = async (event) => {
     // Merge & sort newest -> oldest
     const mergedAll = dedupe(all).sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
 
-    // ---- Resilient title filtering ----
-    let titleStrictApplied = false;
+    // Title-only filtering (no fallback in strict mode)
     let filtered = mergedAll;
+    let titleStrictApplied = false;
     if (titleStrictRequested) {
-      const needle = title.toLowerCase();
-      const strict = mergedAll.filter(j => (j.title || '').toLowerCase().includes(needle));
-
-      if (strict.length === 0 && mergedAll.length > 0) {
-        // No strict matches on this page; RELAX to avoid empty UI.
-        filtered = mergedAll;
-        titleStrictApplied = false;
-      } else if (strict.length > 0 && strict.length < Math.min(pageSize, 5)) {
-        // Too few strict matches; TOP-UP with relaxed results to fill the page.
-        const strictSet = new Set(strict.map(dedupeKey));
-        const extras = mergedAll.filter(j => !strictSet.has(dedupeKey(j)));
-        filtered = strict.concat(extras).slice(0, pageSize);
-        titleStrictApplied = true;
-      } else {
-        filtered = strict;
+      const phraseRe = makePhraseRegex(title);
+      if (phraseRe) {
+        filtered = mergedAll.filter(j => phraseRe.test(j.title || ''));
         titleStrictApplied = true;
       }
     }
 
-    // Slice for the page response (providers already fetched their page)
+    // Slice for this page (each provider was asked for its page already)
     const jobsPage = filtered.slice(0, pageSize);
 
-    // Use the max provider reported total as an approximation to drive the pager.
+    // Approximate total from providers to drive the pager in broad mode.
+    // In strict mode we cannot know the global strict total cheaply; the client will hide "of N".
     const approxTotal = providers.reduce((m, p) => Math.max(m, Number(p.total) || 0), 0);
 
     return {
