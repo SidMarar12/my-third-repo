@@ -12,14 +12,20 @@ const API_ENDPOINT = '/.netlify/functions/search-aggregate';
 function escapeHTML(s = '') {
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
-
 function compactDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d)) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
-
+function ageBadge(iso) {
+  if (!iso) return '';
+  const d = new Date(iso); if (isNaN(d)) return '';
+  const ms = Date.now() - d.getTime();
+  const days = Math.floor(ms / (24*3600*1000));
+  if (days <= 0) return '<span class="badge new">New</span>';
+  if (days === 1) return '<span class="badge">Yesterday</span>';
+  return `<span class="badge">${days}d</span>`;
+}
 function adzunaBadge() {
   return `
     <span class="source-badge">
@@ -35,11 +41,11 @@ function renderRows(items, append = false) {
     const title = escapeHTML(j.title || '');
     const company = escapeHTML(j.company || '');
     const loc = escapeHTML(j.location || '');
-    const posted = compactDate(j.posted);
+    const postedDate = compactDate(j.posted);
+    const postedCell = `${ageBadge(j.posted)} ${postedDate || '—'}`;
     const salaryText = escapeHTML(j.salaryText || '');
     const snippet = escapeHTML((j.snippet || '').trim());
     const source = j.source || '';
-
     const sourceHtml = source === 'Adzuna'
       ? `<div class="source">${adzunaBadge()}</div>`
       : (source ? `<div class="source">Source: ${escapeHTML(source)}</div>` : '');
@@ -48,13 +54,11 @@ function renderRows(items, append = false) {
       <tr class="job-row">
         <td class="cell-job">
           <h3 class="job-title"><a href="${j.url}" target="_blank" rel="noopener noreferrer">${title}</a></h3>
-          <p class="meta">
-            ${company ? `<span>${company}</span>` : ''}${company && loc ? ' · ' : ''}${loc ? `<span>${loc}</span>` : ''}
-          </p>
+          <p class="meta">${company ? `<span>${company}</span>` : ''}${company && loc ? ' · ' : ''}${loc ? `<span>${loc}</span>` : ''}</p>
           ${snippet ? `<p class="snippet">${snippet}</p>` : ''}
           ${sourceHtml}
         </td>
-        <td class="cell-posted">${posted || '—'}</td>
+        <td class="cell-posted">${postedCell}</td>
         <td class="cell-salary">${salaryText || '—'}</td>
       </tr>`;
   }).join('');
@@ -73,7 +77,8 @@ async function runSearch(q, { append = false } = {}) {
     radius: String(q.radius),
     days: String(q.days),
     page: String(page),
-    pageSize: String(pageSize)
+    pageSize: String(pageSize),
+    titleStrict: '1'              // default to title-only matching for higher precision
   });
 
   try {
@@ -121,7 +126,7 @@ form.addEventListener('submit', (e) => {
   runSearch(lastQuery);
 });
 
-// optional input sanitization as user types
+// keep numeric zip entry tight on mobile
 document.getElementById('zip').addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5);
 });
