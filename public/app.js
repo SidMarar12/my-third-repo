@@ -1,6 +1,7 @@
 const form = document.getElementById('searchForm');
 const statusEl = document.getElementById('status');
 const resultsBody = document.getElementById('results');
+const emptyState = document.getElementById('empty-state');
 const pagerEl = document.getElementById('pager');
 const loadMoreBtn = document.getElementById('loadMore');
 
@@ -27,7 +28,7 @@ function ageBadge(iso) {
   return `<span class="badge">${days}d</span>`;
 }
 
-// Compact, compliant per‑row Adzuna mark (min 116×23 required by ToS)
+// Compact, compliant per‑row Adzuna mark (min 116×23)
 function adzunaBadge() {
   return `
     <span class="source-adzuna">
@@ -49,7 +50,6 @@ function renderRows(items, append = false) {
     const snippet = escapeHTML((j.snippet || '').trim());
     const source = j.source || '';
 
-    // Show Adzuna mark right‑aligned, minimal height; other sources as quiet text.
     const sourceHtml =
       source === 'Adzuna'
         ? `<div class="source source--right">${adzunaBadge()}</div>`
@@ -69,7 +69,14 @@ function renderRows(items, append = false) {
   }).join('');
 
   if (!append) resultsBody.innerHTML = '';
-  resultsBody.insertAdjacentHTML('beforeend', rows || '<tr><td colspan="3">No results.</td></tr>');
+  resultsBody.insertAdjacentHTML('beforeend', rows);
+
+  // empty state
+  const hasRows = (resultsBody.children.length > 0);
+  emptyState.hidden = hasRows;
+  if (!hasRows && !append) {
+    resultsBody.innerHTML = '<tr><td colspan="3"></td></tr>'; // keep table height; content sits in empty state
+  }
 }
 
 async function runSearch(q, { append = false } = {}) {
@@ -83,13 +90,11 @@ async function runSearch(q, { append = false } = {}) {
     days: String(q.days),
     page: String(page),
     pageSize: String(pageSize),
-    titleStrict: '1'              // default to title-only matching for higher precision
+    titleStrict: '1'              // title-only matching for higher precision
   });
 
   try {
-    const res = await fetch(`${
-      API_ENDPOINT
-    }?${qs.toString()}`, { method: 'GET' });
+    const res = await fetch(`${API_ENDPOINT}?${qs.toString()}`, { method: 'GET' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
 
@@ -102,7 +107,13 @@ async function runSearch(q, { append = false } = {}) {
       ? `Showing ${Math.min(page * pageSize, total)} of ${total}${providerTxt}`
       : `Showing ${data.jobs?.length || 0}${providerTxt}`;
 
-    renderRows(data.jobs || [], append);
+    if (Array.isArray(data.jobs) && data.jobs.length > 0) {
+      renderRows(data.jobs, append);
+    } else {
+      // show empty state cleanly
+      resultsBody.innerHTML = '';
+      emptyState.hidden = false;
+    }
 
     if (total && page * pageSize < total) {
       pagerEl.hidden = false;
@@ -112,6 +123,8 @@ async function runSearch(q, { append = false } = {}) {
     }
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
+    resultsBody.innerHTML = '';
+    emptyState.hidden = false;
   } finally {
     document.getElementById('go').disabled = false;
   }
@@ -131,7 +144,6 @@ form.addEventListener('submit', (e) => {
   runSearch(lastQuery);
 });
 
-// keep numeric zip entry tight on mobile
 document.getElementById('zip').addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5);
 });
