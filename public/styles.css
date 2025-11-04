@@ -1,20 +1,20 @@
 /* --- Apple‑influenced base ------------------------------------------------- */
 :root{
-  --bg: #f7f8fa;                 /* soft canvas */
-  --ink: #111418;                /* high-contrast text */
-  --muted: #5f6b7a;              /* secondary text */
-  --border: #e5e7eb;             /* subtle dividers */
-  --surface: rgba(255,255,255,.82);
+  --bg: #f5f7fb;
+  --ink: #111418;
+  --muted: #5f6b7a;
+  --border: #e5e7eb;
+  --surface: rgba(255,255,255,.86);
   --ring: #0A84FF;               /* iOS “system blue” approximation */
-  --shadow: 0 8px 24px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.08);
-  --radius: 14px;
+  --shadow: 0 10px 28px rgba(4,15,36,0.08), 0 1px 2px rgba(4,15,36,0.08);
+  --radius: 16px;
 }
 
 html, body { height: 100%; }
 body{
   margin: 0;
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* SF on Apple devices */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.45;
   background: var(--bg);
 
@@ -25,17 +25,43 @@ body{
 
 .container{ max-width: 980px; margin: 0 auto; padding: 24px 16px 56px; }
 
-.header h1{ margin: 10px 0 4px; font-weight: 700; letter-spacing: -0.02em; font-size: 1.7rem; }
+/* Heading with “The Big Fish” highlight */
+.header h1{
+  margin: 8px 0 6px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 1.8rem;
+}
 .header .sub{ margin: 0 0 18px; color: var(--muted); }
 
-/* --- Cards adopt “glass” deference and depth ------------------------------- */
+/* Highlight “The Big Fish” with a soft pill + tiny fish glyph */
+.bigfish{
+  position: relative;
+  display: inline-block;
+  padding: 0 .46em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fff1d6 0%, #e8f0ff 100%);
+  box-shadow: 0 10px 24px rgba(16,23,40,0.06);
+}
+.bigfish::before{
+  content: "";
+  position: absolute;
+  left: -0.9em; top: 52%;
+  transform: translateY(-50%);
+  width: 1.1em; height: .66em;
+  /* little fish (ellipse body + triangle tail) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='20' viewBox='0 0 36 20'%3E%3Cellipse cx='14' cy='10' rx='10' ry='6' fill='%230A84FF'/%3E%3Cpolygon points='4,10 0,6 0,14' fill='%230A84FF'/%3E%3C/svg%3E");
+  background-size: contain; background-repeat: no-repeat;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.14));
+}
+
 .card, .results-wrap{
   background: var(--surface);
   border: 1px solid rgba(0,0,0,0.04);
   border-radius: var(--radius);
   padding: 14px;
-  backdrop-filter: saturate(180%) blur(20px); /* depth */
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
   box-shadow: var(--shadow);
 }
 
@@ -44,33 +70,40 @@ body{
 label{ font-size: 0.92rem; color: #384150; }
 
 input, select{
-  font-size: 1rem; padding: 11px 12px; border-radius: 12px;
-  border: 1px solid #cbd5e1; background: #fff; outline: none;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  font-size: 1rem; padding: 12px 14px; border-radius: 14px;
+  border: 1px solid #d3dae6; background: #fff; outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .05s ease;
 }
 input:focus, select:focus{
   border-color: var(--ring);
   box-shadow: 0 0 0 4px rgba(10,132,255,0.18);
 }
 
-/* Buttons modeled after iOS’ restrained prominence */
+/* Buttons */
 .button-primary, .button-secondary{
-  appearance: none; cursor: pointer; border: 1px solid transparent; border-radius: 12px;
-  font-size: 1rem; padding: 12px 14px; transition: filter .15s ease, transform .05s ease;
+  appearance: none; cursor: pointer; border: 0; border-radius: 14px;
+  font-size: 1rem; padding: 12px 16px; transition: filter .15s ease, transform .05s ease;
 }
-.button-primary{ background: var(--ring); color: #fff; box-shadow: 0 8px 20px rgba(10,132,255,0.25); }
+.button-primary{
+  background: linear-gradient(180deg, #1ea0ff 0%, #0A84FF 100%);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(10,132,255,0.26), 0 1px 2px rgba(0,0,0,0.08);
+}
 .button-primary:active{ transform: translateY(1px); filter: brightness(.96); }
-.button-secondary{ background: #f8fafc; color: #111827; border-color: #e2e8f0; }
+.button-secondary{
+  background: #f8fafc; color: #111827; border: 1px solid #e2e8f0;
+}
+.button-secondary:active{ transform: translateY(1px); }
 
 /* Status line */
 .status{ margin: 12px 4px; color: var(--muted); }
 
-/* --- Results table --------------------------------------------------------- */
+/* Results table */
 .results-wrap{ margin-top: 12px; overflow: hidden; }
 .jobs-table{ width: 100%; border-collapse: separate; border-spacing: 0; }
 .jobs-table thead th{
   text-align: left; font-weight: 600; color: #334155; padding: 12px 12px;
-  background: rgba(255,255,255,0.8); border-bottom: 1px solid #e9edf3;
+  background: rgba(255,255,255,0.9); border-bottom: 1px solid #e9edf3;
   position: sticky; top: 0; z-index: 1;
 }
 .jobs-table tbody td{ vertical-align: top; padding: 12px 12px; border-bottom: 1px solid #eef2f6; }
@@ -78,13 +111,13 @@ input:focus, select:focus{
 .col-job{ width: 100%; }
 .col-posted, .col-salary{ white-space: nowrap; width: 1%; }
 
-.job-title{ margin: 0 0 4px; font-size: 1.04rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+.job-title{ margin: 0 0 4px; font-size: 1.05rem; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
 .job-title a{ text-decoration: none; color: #0f172a; }
 .job-title a:hover{ text-decoration: underline; }
 .meta{ margin: 0 6px 6px 0; color: var(--muted); font-size: 0.92rem; }
 .snippet{ margin: 0; color: #2a2f36; font-size: 0.96rem; }
 
-/* Compact, right‑aligned source line (per‑ad) */
+/* Compact, right‑aligned per‑ad source */
 .source{ margin-top: 6px; font-size: 0.82rem; color: #6b7280; }
 .source--right{ display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 .source-adzuna .adzuna-logo-link img{ width: 116px; height: 23px; object-fit: contain; }
@@ -94,16 +127,23 @@ input:focus, select:focus{
         background: #eef2ff; color: #3730a3; margin-right: 6px; }
 .badge.new{ background: #dcfce7; color: #166534; }
 
+/* Empty state */
+.empty{ display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+.empty-emoji{ font-size: 1.6rem; }
+.empty-title{ margin: 4px 0 2px; font-weight: 600; color: #1f2937; }
+.empty-sub{ margin: 0; }
+
+/* Pager */
 .pager{ text-align: center; margin: 14px 0 24px; }
 
-/* Attribution footer (page-level) */
+/* Attribution footer */
 .attribution{
   display: flex; align-items: center; gap: 6px; justify-content: center;
   padding: 18px 0 40px; color: #4a5568; font-size: 0.9rem;
 }
 .adzuna-logo-link img{ width: 116px; height: 23px; object-fit: contain; }
 
-/* Responsive polish */
+/* Responsive */
 @media (max-width: 640px){
   .field.two-col{ grid-template-columns: 1fr; }
   .jobs-table thead{ font-size: 0.95rem; }
