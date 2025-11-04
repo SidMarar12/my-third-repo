@@ -1,75 +1,57 @@
 // Aggregate job search across Adzuna + CareerOneStop + USAJOBS,
-// with normalization, dedupe, and salary/date extraction.
+// with normalization, dedupe, salary/date extraction, title-only filtering,
+// and corrected pagination signaling.
 //
-// Query params: title, zip, radius (miles), days (0=any), page, pageSize, sources=adzuna,cos,usajobs
-// Env vars required per source:
+// Query params: title, zip, radius (miles), days (0=any),
+//               page, pageSize, sources=adzuna,cos,usajobs, titleStrict=0|1
+//
+// Env vars per source (skip a source if missing):
 //   Adzuna:   ADZUNA_APP_ID, ADZUNA_APP_KEY, ADZUNA_COUNTRY (opt; default "us")
-//   COS:      COS_API_TOKEN, COS_USER_ID  (optional; skip if missing)
-//   USAJOBS:  USAJOBS_AUTH_KEY, USAJOBS_USER_AGENT  (optional; skip if missing)
+//   CoS:      COS_API_TOKEN, COS_USER_ID
+//   USAJOBS:  USAJOBS_AUTH_KEY, USAJOBS_USER_AGENT
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-// ----- utils -----
+// ---------- utils ----------
 function int(v, d) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; }
-
 function normalizeKey(s) {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\s]/g, '').trim();
 }
-
 function hostFromUrl(u) { try { return new URL(u).hostname.replace(/^www\./,''); } catch { return ''; } }
-
 function dedupe(items) {
   const seen = new Set(); const out = [];
   for (const j of items) {
     const key = [normalizeKey(j.title), normalizeKey(j.company), hostFromUrl(j.url), normalizeKey(j.location)].join('|');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(j);
+    if (seen.has(key)) continue; seen.add(key); out.push(j);
   }
   return out;
 }
-
 function fetchJSON(url, { headers = {}, timeout = DEFAULT_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeout);
   return fetch(url, { headers, signal: controller.signal })
     .then(async (res) => {
-      const text = await res.text();
-      let json = {};
-      try { json = text ? JSON.parse(text) : {}; } catch {}
-      clearTimeout(t);
-      if (!res.ok) {
-        const err = new Error(`HTTP ${res.status}`);
-        err.status = res.status;
-        err.body = text;
-        throw err;
-      }
+      const text = await res.text(); clearTimeout(t);
+      let json = {}; try { json = text ? JSON.parse(text) : {}; } catch {}
+      if (!res.ok) { const err = new Error(`HTTP ${res.status}`); err.status = res.status; err.body = text; throw err; }
       return json;
     })
-    .catch((e) => {
-      clearTimeout(t);
-      throw e;
-    });
+    .catch((e) => { clearTimeout(t); throw e; });
 }
-
 function fmtCurrency(n, currency = 'USD') {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
-  } catch {
-    return `$${Math.round(n).toLocaleString('en-US')}`;
-  }
+  try { return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n); }
+  catch { return `$${Math.round(n).toLocaleString('en-US')}`; }
 }
-
 function salaryTextFromMinMax(min, max, { currency = 'USD', unit = '' } = {}) {
-  if (!Number.isFinite(min) && !Number.isFinite(max)) return '';
-  if (Number.isFinite(min) && Number.isFinite(max)) {
+  const hasMin = Number.isFinite(min), hasMax = Number.isFinite(max);
+  if (!hasMin && !hasMax) return '';
+  if (hasMin && hasMax) {
     if (Math.round(min) === Math.round(max)) return `${fmtCurrency(min, currency)}${unit ? '/' + unit : ''}`;
     return `${fmtCurrency(min, currency)}–${fmtCurrency(max, currency)}${unit ? '/' + unit : ''}`;
   }
-  const v = Number.isFinite(min) ? min : max;
+  const v = hasMin ? min : max;
   return `${fmtCurrency(v, currency)}${unit ? '/' + unit : ''}`;
 }
-
 function unitFromUSAJOBS(code = '') {
   const m = String(code).toLowerCase();
   if (m.includes('year')) return 'yr';
@@ -79,8 +61,9 @@ function unitFromUSAJOBS(code = '') {
   if (m.includes('day')) return 'day';
   return '';
 }
+function safeTime(iso) { const t = Date.parse(iso || ''); return Number.isFinite(t) ? t : 0; }
 
-// ----- providers -----
+// ---------- providers ----------
 async function fetchAdzuna(q, page, pageSize) {
   const appId = process.env.ADZUNA_APP_ID;
   const appKey = process.env.ADZUNA_APP_KEY;
@@ -102,15 +85,13 @@ async function fetchAdzuna(q, page, pageSize) {
   if (q.days > 0) qs.set('max_days_old', String(q.days));
 
   const url = `https://api.adzuna.com/v1/api/jobs/${encodeURIComponent(country)}/search/${page}?${qs}`;
-
   try {
     const d = await fetchJSON(url, { headers: { Accept: 'application/json' } });
     const arr = Array.isArray(d.results) ? d.results : [];
     const jobs = arr.map((x) => {
-      const min = Number(x.salary_min);
-      const max = Number(x.salary_max);
+      const min = Number(x.salary_min), max = Number(x.salary_max);
       const currency = x.salary_currency || 'USD';
-      const salaryText = salaryTextFromMinMax(min, max, { currency, unit: '' });
+      const salaryText = salaryTextFromMinMax(min, max, { currency });
       return {
         id: x.id,
         title: x.title || '',
@@ -131,14 +112,10 @@ async function fetchAdzuna(q, page, pageSize) {
 }
 
 async function fetchCOS(q, page, pageSize) {
-  const token = process.env.COS_API_TOKEN;
-  const userId = process.env.COS_USER_ID;
+  const token = process.env.COS_API_TOKEN, userId = process.env.COS_USER_ID;
   if (!token || !userId) return { source: 'CareerOneStop', jobs: [], total: 0, error: 'CareerOneStop credentials missing' };
 
-  const sortCol = 'acquisitiondate';
-  const sortOrder = 'desc';
-  const startRecord = (page - 1) * pageSize;
-
+  const sortCol = 'acquisitiondate', sortOrder = 'desc', startRecord = (page - 1) * pageSize;
   const parts = [
     encodeURIComponent(userId),
     encodeURIComponent(q.title),
@@ -153,26 +130,22 @@ async function fetchCOS(q, page, pageSize) {
   const url = `https://api.careeronestop.org/v2/jobsearch/${parts.join('/')}?enableJobDescriptionSnippet=true&enableMetaData=false`;
 
   try {
-    const d = await fetchJSON(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
-    });
+    const d = await fetchJSON(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
     const arr = Array.isArray(d.Jobs) ? d.Jobs : [];
     const jobs = arr.map((x) => {
-      // CoS pay fields vary; assemble best-effort text if present
-      const numericCandidates = [
+      // CoS salary signals are inconsistent; try numeric min/max first, then text fields.
+      const nums = [
         Number(x.MinimumSalary), Number(x.SalaryMin), Number(x.WageMin),
         Number(x.MaximumSalary), Number(x.SalaryMax), Number(x.WageMax)
-      ].filter((v) => Number.isFinite(v));
+      ].filter(Number.isFinite);
       let salaryText = '';
-      if (numericCandidates.length) {
-        const min = Math.min(...numericCandidates);
-        const max = Math.max(...numericCandidates);
+      if (nums.length) {
+        const min = Math.min(...nums), max = Math.max(...nums);
         salaryText = salaryTextFromMinMax(min, max, { currency: 'USD' });
       } else {
         const textCandidate = x.Pay || x.Wage || x.Salary || x.PayDescription || '';
         salaryText = typeof textCandidate === 'string' ? textCandidate : '';
       }
-
       return {
         id: x.JvId,
         title: x.JobTitle || '',
@@ -193,8 +166,7 @@ async function fetchCOS(q, page, pageSize) {
 }
 
 async function fetchUSAJOBS(q, page, pageSize) {
-  const key = process.env.USAJOBS_AUTH_KEY;
-  const ua = process.env.USAJOBS_USER_AGENT;
+  const key = process.env.USAJOBS_AUTH_KEY, ua = process.env.USAJOBS_USER_AGENT;
   if (!key || !ua) return { source: 'USAJOBS', jobs: [], total: 0, error: 'USAJOBS credentials missing' };
 
   const p = new URLSearchParams({
@@ -205,26 +177,18 @@ async function fetchUSAJOBS(q, page, pageSize) {
     Page: String(page)
   });
   if (q.days > 0) p.set('DatePosted', String(q.days));
-
   const url = `https://data.usajobs.gov/api/Search?${p}`;
 
   try {
     const d = await fetchJSON(url, {
-      headers: {
-        'Host': 'data.usajobs.gov',
-        'User-Agent': ua,
-        'Authorization-Key': key,
-        'Accept': 'application/json'
-      }
+      headers: { 'Host': 'data.usajobs.gov', 'User-Agent': ua, 'Authorization-Key': key, 'Accept': 'application/json' }
     });
     const sr = d.SearchResult || {};
     const items = Array.isArray(sr.SearchResultItems) ? sr.SearchResultItems : [];
-
     const jobs = items.map((it) => {
       const m = it.MatchedObjectDescriptor || {};
       const link = Array.isArray(m.ApplyURI) ? m.ApplyURI[0] : (m.PositionURI || '');
       const posted = m.PublicationStartDate || m.OpenDate || m.OpeningDate || '';
-
       // Salary
       let salaryText = '';
       const rem = Array.isArray(m.PositionRemuneration) ? m.PositionRemuneration : [];
@@ -237,7 +201,6 @@ async function fetchUSAJOBS(q, page, pageSize) {
         const max = maxs.length ? Math.max(...maxs) : NaN;
         salaryText = salaryTextFromMinMax(min, max, { currency, unit });
       }
-
       return {
         id: it.MatchedObjectId || m.PositionID || link,
         title: m.PositionTitle || '',
@@ -250,7 +213,6 @@ async function fetchUSAJOBS(q, page, pageSize) {
         source: 'USAJOBS'
       };
     });
-
     const total = Number.isFinite(+sr.SearchResultCountAll) ? +sr.SearchResultCountAll : jobs.length;
     return { source: 'USAJOBS', jobs, total };
   } catch (e) {
@@ -258,7 +220,7 @@ async function fetchUSAJOBS(q, page, pageSize) {
   }
 }
 
-// ----- function handler -----
+// ---------- function handler ----------
 exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
   try {
@@ -270,6 +232,7 @@ exports.handler = async (event) => {
     const page = Math.max(1, int(q.page || '1', 1));
     const pageSize = Math.min(50, Math.max(1, int(q.pageSize || '25', 25)));
     const sources = (q.sources || 'adzuna,cos,usajobs').split(',').map(s => s.trim().toLowerCase());
+    const titleStrict = String(q.titleStrict || '0') === '1';
 
     if (!title) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing 'title'." }) };
     if (!/^\d{5}$/.test(zip)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'ZIP must be 5 digits.' }) };
@@ -284,6 +247,7 @@ exports.handler = async (event) => {
     if (sources.includes('usajobs')) tasks.push(fetchUSAJOBS(query, page, pageSize));
 
     const settled = await Promise.allSettled(tasks);
+
     let all = []; const providers = []; const errors = [];
     for (const s of settled) {
       if (s.status === 'fulfilled') {
@@ -296,20 +260,29 @@ exports.handler = async (event) => {
       }
     }
 
-    const merged = dedupe(all).sort((a, b) => Date.parse(b.posted || '') - Date.parse(a.posted || ''));
+    // Merge, optional title-only filter, then sort newest -> oldest
+    let merged = dedupe(all);
+    if (titleStrict) {
+      const needle = title.toLowerCase();
+      merged = merged.filter(j => (j.title || '').toLowerCase().includes(needle));
+    }
+    merged.sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
 
-    // simple pagination after merge to keep the client unchanged
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
+    // We page at the provider level; each provider already received `page`.
+    // For the response body we just return the first `pageSize` after merge.
+    const jobsPage = merged.slice(0, pageSize);
+
+    // Use the max provider reported total as an approximation to drive the pager.
+    const approxTotal = providers.reduce((m, p) => Math.max(m, Number(p.total) || 0), 0);
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        total: merged.length,
+        total: approxTotal,
         page,
         pageSize,
-        jobs: merged.slice(start, end),
+        jobs: jobsPage,
         providers,
         errors,
         source: 'aggregated'
