@@ -4,10 +4,12 @@ const resultsBody = document.getElementById('results');
 const emptyState = document.getElementById('empty-state');
 const pagerEl = document.getElementById('pager');
 const loadMoreBtn = document.getElementById('loadMore');
+const searchBtn = document.getElementById('go');
 
-let lastQuery = null;
 let page = 1;
 const pageSize = 25;
+let shown = 0;          // how many rows have actually been rendered
+let loading = false;    // prevent overlapping requests
 const API_ENDPOINT = '/.netlify/functions/search-aggregate';
 
 function escapeHTML(s = '') {
@@ -39,6 +41,7 @@ function adzunaBadge() {
     </span>`;
 }
 
+// simple skeletons for perceived performance (used only on fresh search)
 function renderSkeletonRows(n = 4) {
   const row = () => `
     <tr class="skel-row">
@@ -54,7 +57,7 @@ function renderSkeletonRows(n = 4) {
   emptyState.hidden = true;
 }
 
-function renderRows(items, append = false) {
+function renderRows(items) {
   const rows = items.map(j => {
     const title = escapeHTML(j.title || '');
     const company = escapeHTML(j.company || '');
@@ -83,20 +86,36 @@ function renderRows(items, append = false) {
       </tr>`;
   }).join('');
 
-  if (!append) resultsBody.innerHTML = '';
   resultsBody.insertAdjacentHTML('beforeend', rows);
+  shown += items.length;
+  // any time we add rows, ensure the empty state is hidden
+  emptyState.hidden = true;
+}
 
-  const hasRows = (resultsBody.children.length > 0);
-  emptyState.hidden = hasRows;
-  if (!hasRows && !append) {
-    resultsBody.innerHTML = '<tr><td colspan="3"></td></tr>';
+function updateStatus({ total, providers }) {
+  const providerTxt = Array.isArray(providers) && providers.length
+    ? ' | ' + providers.map(p => `${p.source}:${p.total ?? 0}`).join(', ')
+    : '';
+  if (Number.isFinite(+total)) {
+    statusEl.textContent = `Showing ${Math.min(shown, +total)} of ${total}${providerTxt}`;
+  } else {
+    statusEl.textContent = `Showing ${shown}${providerTxt}`;
   }
 }
 
 async function runSearch(q, { append = false } = {}) {
-  statusEl.textContent = 'Searching…';
-  document.getElementById('go').disabled = true;
-  if (!append) renderSkeletonRows(4);
+  if (loading) return;          // block concurrent calls
+  loading = true;
+  searchBtn.disabled = true;
+  loadMoreBtn.disabled = true;
+
+  if (!append) {
+    // fresh search: reset state and show skeletons
+    page = 1;
+    shown = 0;
+    resultsBody.innerHTML = '';
+    renderSkeletonRows(4);
+  }
 
   const qs = new URLSearchParams({
     title: q.title,
@@ -105,43 +124,54 @@ async function runSearch(q, { append = false } = {}) {
     days: String(q.days),
     page: String(page),
     pageSize: String(pageSize),
-    titleStrict: '1' // title-only matching for higher precision
+    titleStrict: '1'   // title-only matching for higher precision
   });
 
   try {
     const res = await fetch(`${API_ENDPOINT}?${qs.toString()}`, { method: 'GET' });
     const data = await res.json();
+
+    // ignore non-OK but still try to show details
     if (!res.ok) throw new Error(data.error || 'Request failed');
 
+    // replace skeletons on first paint
+    if (!append) resultsBody.innerHTML = '';
+
+    const items = Array.isArray(data.jobs) ? data.jobs : [];
     const total = Number.isFinite(+data.total) ? +data.total : null;
-    const providerTxt = Array.isArray(data.providers) && data.providers.length
-      ? ' | ' + data.providers.map(p => `${p.source}:${p.total ?? 0}`).join(', ')
-      : '';
 
-    statusEl.textContent = total
-      ? `Showing ${Math.min(page * pageSize, total)} of ${total}${providerTxt}`
-      : `Showing ${data.jobs?.length || 0}${providerTxt}`;
-
-    if (Array.isArray(data.jobs) && data.jobs.length > 0) {
-      resultsBody.innerHTML = '';
-      renderRows(data.jobs, append);
+    if (items.length > 0) {
+      renderRows(items);
     } else {
-      resultsBody.innerHTML = '';
-      emptyState.hidden = false;
+      // only show the empty state when this is the first page AND nothing was rendered
+      if (!append && shown === 0) {
+        emptyState.hidden = false;
+      }
     }
 
-    if (total && page * pageSize < total) {
+    updateStatus({ total, providers: data.providers });
+
+    // Pager logic: show only if there is more to show *and* this page returned something
+    if (total && shown < total && items.length > 0) {
       pagerEl.hidden = false;
-      loadMoreBtn.onclick = () => { page += 1; runSearch(q, { append: true }); };
+      loadMoreBtn.onclick = () => {
+        if (loading) return;
+        page += 1;
+        runSearch(q, { append: true });
+      };
     } else {
       pagerEl.hidden = true;
     }
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
-    resultsBody.innerHTML = '';
-    emptyState.hidden = false;
+    if (!append && shown === 0) {
+      resultsBody.innerHTML = '';
+      emptyState.hidden = false;
+    }
   } finally {
-    document.getElementById('go').disabled = false;
+    loading = false;
+    searchBtn.disabled = false;
+    loadMoreBtn.disabled = false;
   }
 }
 
@@ -154,11 +184,11 @@ form.addEventListener('submit', (e) => {
   if (!title || !/^\d{5}$/.test(zip)) return;
 
   document.getElementById('zip').value = zip; // sanitize visually
-  lastQuery = { title, zip, radius, days };
-  page = 1;
-  runSearch(lastQuery);
+  const q = { title, zip, radius, days };
+  runSearch(q, { append: false });
 });
 
+// keep numeric zip entry tight on mobile
 document.getElementById('zip').addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5);
 });
