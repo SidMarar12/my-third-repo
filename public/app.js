@@ -26,12 +26,14 @@ function ageBadge(iso) {
   if (days === 1) return '<span class="badge">Yesterday</span>';
   return `<span class="badge">${days}d</span>`;
 }
+
+// Compact, compliant per‑row Adzuna mark (min 116×23 required by ToS)
 function adzunaBadge() {
   return `
-    <span class="source-badge">
-      <a href="https://www.adzuna.com" target="_blank" rel="noopener noreferrer">Jobs</a> by
+    <span class="source-adzuna">
+      <a class="adzuna-jobs-link" href="https://www.adzuna.com" target="_blank" rel="noopener noreferrer">Jobs</a> by
       <a class="adzuna-logo-link" href="https://www.adzuna.com" target="_blank" rel="noopener noreferrer" aria-label="Adzuna">
-        <img src="https://zunastatic-abf.kxcdn.com/assets/images/press/adzuna_logo/adzuna_logo.jpg" alt="Adzuna" width="90" height="18" />
+        <img src="https://zunastatic-abf.kxcdn.com/assets/images/press/adzuna_logo/adzuna_logo.jpg" alt="Adzuna" width="116" height="23" />
       </a>
     </span>`;
 }
@@ -46,9 +48,12 @@ function renderRows(items, append = false) {
     const salaryText = escapeHTML(j.salaryText || '');
     const snippet = escapeHTML((j.snippet || '').trim());
     const source = j.source || '';
-    const sourceHtml = source === 'Adzuna'
-      ? `<div class="source">${adzunaBadge()}</div>`
-      : (source ? `<div class="source">Source: ${escapeHTML(source)}</div>` : '');
+
+    // Show Adzuna mark right‑aligned, minimal height; other sources as quiet text.
+    const sourceHtml =
+      source === 'Adzuna'
+        ? `<div class="source source--right">${adzunaBadge()}</div>`
+        : (source ? `<div class="source source--right">Source: ${escapeHTML(source)}</div>` : '');
 
     return `
       <tr class="job-row">
@@ -82,7 +87,9 @@ async function runSearch(q, { append = false } = {}) {
   });
 
   try {
-    const res = await fetch(`${API_ENDPOINT}?${qs.toString()}`, { method: 'GET' });
+    const res = await fetch(`${
+      API_ENDPOINT
+    }?${qs.toString()}`, { method: 'GET' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
 
@@ -91,11 +98,9 @@ async function runSearch(q, { append = false } = {}) {
       ? ' | ' + data.providers.map(p => `${p.source}:${p.total ?? 0}`).join(', ')
       : '';
 
-    if (total) {
-      statusEl.textContent = `Showing ${Math.min(page * pageSize, total)} of ${total}${providerTxt}`;
-    } else {
-      statusEl.textContent = `Showing ${data.jobs?.length || 0}${providerTxt}`;
-    }
+    statusEl.textContent = total
+      ? `Showing ${Math.min(page * pageSize, total)} of ${total}${providerTxt}`
+      : `Showing ${data.jobs?.length || 0}${providerTxt}`;
 
     renderRows(data.jobs || [], append);
 
