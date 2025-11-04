@@ -92,14 +92,18 @@ function renderRows(items) {
   emptyState.hidden = true;
 }
 
-function updateStatus(total, providers) {
+function updateStatus(total, providers, mode) {
   const providerTxt = Array.isArray(providers) && providers.length
     ? ' | ' + providers.map(p => `${p.source}:${fmtCompact(p.total ?? 0)}`).join(', ')
     : '';
-  if (Number.isFinite(+total)) {
-    statusEl.textContent = `Showing ${fmtCompact(Math.min(shown, +total))} of ${fmtCompact(+total)}${providerTxt}`;
+  const modeTxt = mode === 'title' ? ' · Title only' : ' · Broad';
+  if (mode === 'title') {
+    // In strict mode provider totals overstate what we'll actually show; avoid "of N"
+    statusEl.textContent = `Showing ${fmtCompact(shown)}${providerTxt}${modeTxt}`;
+  } else if (Number.isFinite(+total)) {
+    statusEl.textContent = `Showing ${fmtCompact(Math.min(shown, +total))} of ${fmtCompact(+total)}${providerTxt}${modeTxt}`;
   } else {
-    statusEl.textContent = `Showing ${fmtCompact(shown)}${providerTxt}`;
+    statusEl.textContent = `Showing ${fmtCompact(shown)}${providerTxt}${modeTxt}`;
   }
 }
 
@@ -144,13 +148,16 @@ async function runSearch(q, { append = false } = {}) {
       emptyState.hidden = false;
     }
 
-    updateStatus(total, data.providers);
+    updateStatus(total, data.providers, match);
 
-    if (total && shown < total && items.length > 0) {
+    if (match !== 'title' && total && shown < total && items.length > 0) {
+      // only drive "load more" from provider totals in broad mode
       pagerEl.hidden = false;
       loadMoreBtn.onclick = () => { if (loading) return; page += 1; runSearch(q, { append: true }); };
     } else {
-      pagerEl.hidden = true;
+      // in title mode we still allow paging when we got something, but we stop if a page returns nothing
+      pagerEl.hidden = !(items.length > 0);
+      loadMoreBtn.onclick = () => { if (loading) return; page += 1; runSearch(q, { append: true }); };
     }
   } catch (e) {
     statusEl.textContent = `Error: ${e.message}`;
