@@ -1,5 +1,5 @@
 // Aggregate job search across Adzuna + CareerOneStop + USAJOBS,
-// with normalization, de-dupe, salary/date extraction, and *honest* title-only filtering.
+// with normalization, de-dupe, salary/date extraction, and robust title-only mode.
 //
 // Query params: title, zip, radius (miles), days (0=any),
 //               page, pageSize, sources=adzuna,cos,usajobs, titleStrict=0|1
@@ -10,6 +10,7 @@
 //   USAJOBS:  USAJOBS_AUTH_KEY, USAJOBS_USER_AGENT
 
 const DEFAULT_TIMEOUT_MS = 8000;
+const STRICT_SCAN_PAGES_MAX = 8; // cap to keep latency predictable
 
 // ---------- utils ----------
 function int(v, d) { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; }
@@ -63,8 +64,8 @@ function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function makePhraseRegex(phrase){
   const words = (phrase || '').toLowerCase().trim().split(/\s+/).map(escapeRegExp).filter(Boolean);
   if (!words.length) return null;
-  const sep = String.raw`[\s\-/·–—]*`;            // tolerate punctuation and hyphens between words
-  const pat = `\\b${words.join(sep)}\\b`;          // whole-word phrase match
+  const sep = String.raw`[\s\-/·–—]*`; // tolerate punctuation/hyphens between words
+  const pat = `\\b${words.join(sep)}\\b`;
   try { return new RegExp(pat, 'i'); } catch { return null; }
 }
 
@@ -229,7 +230,7 @@ exports.handler = async (event) => {
     const page = Math.max(1, int(q.page || '1', 1));
     const pageSize = Math.min(50, Math.max(1, int(q.pageSize || '25', 25)));
     const sources = (q.sources || 'adzuna,cos,usajobs').split(',').map(s => s.trim().toLowerCase());
-    const titleStrictRequested = String(q.titleStrict || '0') === '1'; // strict title filter if true
+    const titleStrictRequested = String(q.titleStrict || '0') === '1';
 
     if (!title) return { statusCode: 400, headers, body: JSON.stringify({ error: "Missing 'title'." }) };
     if (!/^\d{5}$/.test(zip)) return { statusCode: 400, headers, body: JSON.stringify({ error: 'ZIP must be 5 digits.' }) };
@@ -238,57 +239,82 @@ exports.handler = async (event) => {
 
     const query = { title, zip, radiusMiles, days };
 
-    const tasks = [];
-    if (sources.includes('adzuna')) tasks.push(fetchAdzuna(query, page, pageSize));
-    if (sources.includes('cos')) tasks.push(fetchCOS(query, page, pageSize));
-    if (sources.includes('usajobs')) tasks.push(fetchUSAJOBS(query, page, pageSize));
+    // Broad mode (fast-path): single page per provider, merge.
+    if (!titleStrictRequested) {
+      const tasks = [];
+      if (sources.includes('adzuna')) tasks.push(fetchAdzuna(query, page, pageSize));
+      if (sources.includes('cos')) tasks.push(fetchCOS(query, page, pageSize));
+      if (sources.includes('usajobs')) tasks.push(fetchUSAJOBS(query, page, pageSize));
 
-    const settled = await Promise.allSettled(tasks);
-
-    let all = []; const providers = []; const errors = [];
-    for (const s of settled) {
-      if (s.status === 'fulfilled') {
-        const { source, jobs, total, error } = s.value;
-        providers.push({ source, total });
-        if (error) errors.push({ source, error });
-        all = all.concat(jobs || []);
-      } else {
-        errors.push({ source: 'unknown', error: String(s.reason) });
+      const settled = await Promise.allSettled(tasks);
+      let all = []; const providers = []; const errors = [];
+      for (const s of settled) {
+        if (s.status === 'fulfilled') {
+          const { source, jobs, total, error } = s.value;
+          providers.push({ source, total });
+          if (error) errors.push({ source, error });
+          all = all.concat(jobs || []);
+        } else {
+          errors.push({ source: 'unknown', error: String(s.reason) });
+        }
       }
+      const merged = dedupe(all).sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
+      const jobsPage = merged.slice(0, pageSize);
+      const approxTotal = providers.reduce((m, p) => Math.max(m, Number(p.total) || 0), 0);
+      return { statusCode: 200, headers, body: JSON.stringify({ total: approxTotal, page, pageSize, jobs: jobsPage, providers, errors, filters: { titleStrictRequested, titleStrictApplied: false }, source: 'aggregated' }) };
     }
 
-    // Merge & sort newest -> oldest
-    const mergedAll = dedupe(all).sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
+    // Strict mode (robust): scan multiple provider pages until we have enough *title-exact* matches.
+    const phraseRe = makePhraseRegex(title);
+    const targetStart = (page - 1) * pageSize;
+    const targetEnd = page * pageSize;
 
-    // Title-only filtering (no fallback in strict mode)
-    let filtered = mergedAll;
-    let titleStrictApplied = false;
-    if (titleStrictRequested) {
-      const phraseRe = makePhraseRegex(title);
-      if (phraseRe) {
-        filtered = mergedAll.filter(j => phraseRe.test(j.title || ''));
-        titleStrictApplied = true;
+    let scanPage = 1;
+    let strictCollected = [];
+    const providersTotals = new Map(); // source -> total
+    const errors = [];
+
+    while (strictCollected.length < targetEnd && scanPage <= STRICT_SCAN_PAGES_MAX) {
+      const tasks = [];
+      if (sources.includes('adzuna')) tasks.push(fetchAdzuna(query, scanPage, pageSize));
+      if (sources.includes('cos')) tasks.push(fetchCOS(query, scanPage, pageSize));
+      if (sources.includes('usajobs')) tasks.push(fetchUSAJOBS(query, scanPage, pageSize));
+
+      const settled = await Promise.allSettled(tasks);
+      for (const s of settled) {
+        if (s.status === 'fulfilled') {
+          const { source, jobs, total, error } = s.value;
+          if (source) providersTotals.set(source, Number(total) || providersTotals.get(source) || 0);
+          if (error) errors.push({ source, error });
+          const arr = Array.isArray(jobs) ? jobs : [];
+          // apply strict title filter here
+          const filtered = phraseRe ? arr.filter(j => phraseRe.test(j.title || '')) : [];
+          strictCollected = strictCollected.concat(filtered);
+        } else {
+          errors.push({ source: 'unknown', error: String(s.reason) });
+        }
       }
+      scanPage += 1;
     }
 
-    // Slice for this page (each provider was asked for its page already)
-    const jobsPage = filtered.slice(0, pageSize);
+    // Deduplicate across pages/providers, sort newest, and slice the requested chunk
+    strictCollected = dedupe(strictCollected).sort((a, b) => safeTime(b.posted) - safeTime(a.posted));
+    const jobsSlice = strictCollected.slice(targetStart, targetEnd);
 
-    // Approximate total from providers to drive the pager in broad mode.
-    // In strict mode we cannot know the global strict total cheaply; the client will hide "of N".
-    const approxTotal = providers.reduce((m, p) => Math.max(m, Number(p.total) || 0), 0);
+    // Build providers list for transparency; we won't claim a global total in strict mode
+    const providers = Array.from(providersTotals.entries()).map(([source, total]) => ({ source, total }));
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        total: approxTotal,
+        total: null, // unknown for strict mode; avoids "of N" confusion
         page,
         pageSize,
-        jobs: jobsPage,
+        jobs: jobsSlice,
         providers,
         errors,
-        filters: { titleStrictRequested, titleStrictApplied },
+        filters: { titleStrictRequested: true, titleStrictApplied: true, strictScanPagesUsed: Math.min(scanPage - 1, STRICT_SCAN_PAGES_MAX), strictPoolSize: strictCollected.length },
         source: 'aggregated'
       })
     };
