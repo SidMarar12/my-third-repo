@@ -8,8 +8,8 @@ const searchBtn = document.getElementById('go');
 
 let page = 1;
 const pageSize = 25;
-let shown = 0;          // how many rows have actually been rendered
-let loading = false;    // prevent overlapping requests
+let shown = 0;
+let loading = false;
 const API_ENDPOINT = '/.netlify/functions/search-aggregate';
 
 function escapeHTML(s = '') {
@@ -29,8 +29,6 @@ function ageBadge(iso) {
   if (days === 1) return '<span class="badge">Yesterday</span>';
   return `<span class="badge">${days}d</span>`;
 }
-
-// Compact, compliant per‑row Adzuna mark (min 116×23)
 function adzunaBadge() {
   return `
     <span class="source-adzuna">
@@ -41,7 +39,7 @@ function adzunaBadge() {
     </span>`;
 }
 
-// simple skeletons for perceived performance (used only on fresh search)
+// skeletons (first page only)
 function renderSkeletonRows(n = 4) {
   const row = () => `
     <tr class="skel-row">
@@ -67,7 +65,6 @@ function renderRows(items) {
     const salaryText = escapeHTML(j.salaryText || '');
     const snippet = escapeHTML((j.snippet || '').trim());
     const source = j.source || '';
-
     const sourceHtml =
       source === 'Adzuna'
         ? `<div class="source source--right">${adzunaBadge()}</div>`
@@ -88,11 +85,10 @@ function renderRows(items) {
 
   resultsBody.insertAdjacentHTML('beforeend', rows);
   shown += items.length;
-  // any time we add rows, ensure the empty state is hidden
   emptyState.hidden = true;
 }
 
-function updateStatus({ total, providers }) {
+function updateStatus(total, providers) {
   const providerTxt = Array.isArray(providers) && providers.length
     ? ' | ' + providers.map(p => `${p.source}:${p.total ?? 0}`).join(', ')
     : '';
@@ -104,15 +100,13 @@ function updateStatus({ total, providers }) {
 }
 
 async function runSearch(q, { append = false } = {}) {
-  if (loading) return;          // block concurrent calls
+  if (loading) return;
   loading = true;
   searchBtn.disabled = true;
   loadMoreBtn.disabled = true;
 
   if (!append) {
-    // fresh search: reset state and show skeletons
-    page = 1;
-    shown = 0;
+    page = 1; shown = 0;
     resultsBody.innerHTML = '';
     renderSkeletonRows(4);
   }
@@ -124,17 +118,14 @@ async function runSearch(q, { append = false } = {}) {
     days: String(q.days),
     page: String(page),
     pageSize: String(pageSize),
-    titleStrict: '1'   // title-only matching for higher precision
+    // Default to RELAXED title matching. You can test strict by manually adding &titleStrict=1
   });
 
   try {
     const res = await fetch(`${API_ENDPOINT}?${qs.toString()}`, { method: 'GET' });
     const data = await res.json();
-
-    // ignore non-OK but still try to show details
     if (!res.ok) throw new Error(data.error || 'Request failed');
 
-    // replace skeletons on first paint
     if (!append) resultsBody.innerHTML = '';
 
     const items = Array.isArray(data.jobs) ? data.jobs : [];
@@ -142,23 +133,15 @@ async function runSearch(q, { append = false } = {}) {
 
     if (items.length > 0) {
       renderRows(items);
-    } else {
-      // only show the empty state when this is the first page AND nothing was rendered
-      if (!append && shown === 0) {
-        emptyState.hidden = false;
-      }
+    } else if (!append && shown === 0) {
+      emptyState.hidden = false;
     }
 
-    updateStatus({ total, providers: data.providers });
+    updateStatus(total, data.providers);
 
-    // Pager logic: show only if there is more to show *and* this page returned something
     if (total && shown < total && items.length > 0) {
       pagerEl.hidden = false;
-      loadMoreBtn.onclick = () => {
-        if (loading) return;
-        page += 1;
-        runSearch(q, { append: true });
-      };
+      loadMoreBtn.onclick = () => { if (loading) return; page += 1; runSearch(q, { append: true }); };
     } else {
       pagerEl.hidden = true;
     }
@@ -183,12 +166,11 @@ form.addEventListener('submit', (e) => {
   const days = parseInt(document.getElementById('days').value, 10);
   if (!title || !/^\d{5}$/.test(zip)) return;
 
-  document.getElementById('zip').value = zip; // sanitize visually
+  document.getElementById('zip').value = zip;
   const q = { title, zip, radius, days };
   runSearch(q, { append: false });
 });
 
-// keep numeric zip entry tight on mobile
 document.getElementById('zip').addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5);
 });
