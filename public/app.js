@@ -39,6 +39,21 @@ function adzunaBadge() {
     </span>`;
 }
 
+function renderSkeletonRows(n = 4) {
+  const row = () => `
+    <tr class="skel-row">
+      <td>
+        <div class="skel skel-title"></div>
+        <div class="skel skel-line"></div>
+        <div class="skel skel-line short"></div>
+      </td>
+      <td><div class="skel skel-chip"></div></td>
+      <td><div class="skel skel-chip"></div></td>
+    </tr>`;
+  resultsBody.innerHTML = Array.from({ length: n }, row).join('');
+  emptyState.hidden = true;
+}
+
 function renderRows(items, append = false) {
   const rows = items.map(j => {
     const title = escapeHTML(j.title || '');
@@ -71,17 +86,17 @@ function renderRows(items, append = false) {
   if (!append) resultsBody.innerHTML = '';
   resultsBody.insertAdjacentHTML('beforeend', rows);
 
-  // empty state
   const hasRows = (resultsBody.children.length > 0);
   emptyState.hidden = hasRows;
   if (!hasRows && !append) {
-    resultsBody.innerHTML = '<tr><td colspan="3"></td></tr>'; // keep table height; content sits in empty state
+    resultsBody.innerHTML = '<tr><td colspan="3"></td></tr>';
   }
 }
 
 async function runSearch(q, { append = false } = {}) {
   statusEl.textContent = 'Searching…';
   document.getElementById('go').disabled = true;
+  if (!append) renderSkeletonRows(4);
 
   const qs = new URLSearchParams({
     title: q.title,
@@ -90,7 +105,7 @@ async function runSearch(q, { append = false } = {}) {
     days: String(q.days),
     page: String(page),
     pageSize: String(pageSize),
-    titleStrict: '1'              // title-only matching for higher precision
+    titleStrict: '1' // title-only matching for higher precision
   });
 
   try {
@@ -108,9 +123,9 @@ async function runSearch(q, { append = false } = {}) {
       : `Showing ${data.jobs?.length || 0}${providerTxt}`;
 
     if (Array.isArray(data.jobs) && data.jobs.length > 0) {
+      resultsBody.innerHTML = '';
       renderRows(data.jobs, append);
     } else {
-      // show empty state cleanly
       resultsBody.innerHTML = '';
       emptyState.hidden = false;
     }
