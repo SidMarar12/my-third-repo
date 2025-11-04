@@ -9,7 +9,9 @@
 <body>
   <main class="container">
     <header class="header">
-      <h1>Find jobs near you</h1>
+      <h1>
+        Find <span class="bigfish" aria-label="The Big Fish">The Big Fish</span> near you
+      </h1>
       <p class="sub">Search by job title, ZIP, radius, and time window.</p>
     </header>
 
@@ -65,6 +67,11 @@
         </thead>
         <tbody id="results"><!-- rows injected here --></tbody>
       </table>
+      <div id="empty-state" class="empty" hidden>
+        <div class="empty-emoji">🔎</div>
+        <p class="empty-title">No results</p>
+        <p class="empty-sub">Try a broader title or a larger radius.</p>
+      </div>
     </section>
 
     <div id="pager" class="pager" hidden>
@@ -72,7 +79,7 @@
     </div>
   </main>
 
-  <!-- Required page-level attribution (kept) -->
+  <!-- Page-level attribution (keep for compliance) -->
   <footer class="attribution">
     <a class="adzuna-jobs-link" href="https://www.adzuna.com" target="_blank" rel="noopener noreferrer">Jobs</a>
     <span> by </span>
