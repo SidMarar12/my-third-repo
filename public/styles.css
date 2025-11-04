@@ -1,11 +1,11 @@
 /* --- Apple‑influenced base ------------------------------------------------- */
 :root{
   --bg: #f5f7fb;
-  --ink: #111418;
+  --ink: #0f1220;
   --muted: #5f6b7a;
   --border: #e5e7eb;
-  --surface: rgba(255,255,255,.86);
-  --ring: #0A84FF;               /* iOS “system blue” approximation */
+  --surface: rgba(255,255,255,.88);
+  --ring: #0A84FF;               /* iOS system blue approximation */
   --shadow: 0 10px 28px rgba(4,15,36,0.08), 0 1px 2px rgba(4,15,36,0.08);
   --radius: 16px;
 }
@@ -19,42 +19,38 @@ body{
   background: var(--bg);
 
   /* ultra‑subtle doodle background (paper fish) */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg opacity='0.05'%3E%3Cellipse cx='36' cy='36' rx='18' ry='10' fill='%23a5d8ff'/%3E%3Cpolygon points='18,36 4,28 4,44' fill='%23a5d8ff'/%3E%3Cellipse cx='128' cy='52' rx='16' ry='9' fill='%23ffd6e7'/%3E%3Cpolygon points='112,52 100,45 100,59' fill='%23ffd6e7'/%3E%3Cellipse cx='68' cy='120' rx='14' ry='8' fill='%23c7f9e1'/%3E%3Cpolygon points='54,120 44,113 44,127' fill='%23c7f9e1'/%3E%3Cellipse cx='140' cy='132' rx='12' ry='7' fill='%23fff3bf'/%3E%3Cpolygon points='128,132 120,127 120,137' fill='%23fff3bf'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg opacity='0.04'%3E%3Cellipse cx='36' cy='36' rx='18' ry='10' fill='%23a5d8ff'/%3E%3Cpolygon points='18,36 4,28 4,44' fill='%23a5d8ff'/%3E%3Cellipse cx='128' cy='52' rx='16' ry='9' fill='%23ffd6e7'/%3E%3Cpolygon points='112,52 100,45 100,59' fill='%23ffd6e7'/%3E%3Cellipse cx='68' cy='120' rx='14' ry='8' fill='%23c7f9e1'/%3E%3Cpolygon points='54,120 44,113 44,127' fill='%23c7f9e1'/%3E%3Cellipse cx='140' cy='132' rx='12' ry='7' fill='%23fff3bf'/%3E%3Cpolygon points='128,132 120,127 120,137' fill='%23fff3bf'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 200px 200px;
 }
 
 .container{ max-width: 980px; margin: 0 auto; padding: 24px 16px 56px; }
 
-/* Heading with “The Big Fish” highlight */
+/* Heading with “The Big Fish” highlight – no layout shift, no blue dot */
 .header h1{
   margin: 8px 0 6px;
-  font-weight: 700;
+  font-weight: 720;
   letter-spacing: -0.02em;
   font-size: 1.8rem;
+  text-wrap: balance;
 }
 .header .sub{ margin: 0 0 18px; color: var(--muted); }
 
-/* Highlight “The Big Fish” with a soft pill + tiny fish glyph */
+/* Highlight “The Big Fish” with soft pill and inline fish icon */
 .bigfish{
-  position: relative;
-  display: inline-block;
-  padding: 0 .46em;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #fff1d6 0%, #e8f0ff 100%);
+  display: inline-flex; align-items: center; gap: .38em;
+  padding: .06em .38em; border-radius: 999px;
+  background: linear-gradient(90deg, #fff3c4 0%, #e8f0ff 100%);
   box-shadow: 0 10px 24px rgba(16,23,40,0.06);
 }
-.bigfish::before{
-  content: "";
-  position: absolute;
-  left: -0.9em; top: 52%;
-  transform: translateY(-50%);
-  width: 1.1em; height: .66em;
-  /* little fish (ellipse body + triangle tail) */
+.fish-icon{
+  width: 1.05em; height: .66em; display: inline-block; flex: 0 0 auto;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='20' viewBox='0 0 36 20'%3E%3Cellipse cx='14' cy='10' rx='10' ry='6' fill='%230A84FF'/%3E%3Cpolygon points='4,10 0,6 0,14' fill='%230A84FF'/%3E%3C/svg%3E");
   background-size: contain; background-repeat: no-repeat;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.14));
+  vertical-align: -0.1em;
 }
+.bigfish-text{ font-weight: 740; }
 
+/* Cards adopt “glass” deference and depth */
 .card, .results-wrap{
   background: var(--surface);
   border: 1px solid rgba(0,0,0,0.04);
@@ -74,6 +70,7 @@ input, select{
   border: 1px solid #d3dae6; background: #fff; outline: none;
   transition: border-color .15s ease, box-shadow .15s ease, transform .05s ease;
 }
+input::placeholder{ color: #9aa5b1; }
 input:focus, select:focus{
   border-color: var(--ring);
   box-shadow: 0 0 0 4px rgba(10,132,255,0.18);
@@ -90,9 +87,7 @@ input:focus, select:focus{
   box-shadow: 0 10px 22px rgba(10,132,255,0.26), 0 1px 2px rgba(0,0,0,0.08);
 }
 .button-primary:active{ transform: translateY(1px); filter: brightness(.96); }
-.button-secondary{
-  background: #f8fafc; color: #111827; border: 1px solid #e2e8f0;
-}
+.button-secondary{ background: #f8fafc; color: #111827; border: 1px solid #e2e8f0; }
 .button-secondary:active{ transform: translateY(1px); }
 
 /* Status line */
@@ -126,6 +121,23 @@ input:focus, select:focus{
 .badge{ display: inline-block; font-size: 0.75rem; padding: 2px 6px; border-radius: 999px;
         background: #eef2ff; color: #3730a3; margin-right: 6px; }
 .badge.new{ background: #dcfce7; color: #166534; }
+
+/* Skeleton loading state */
+.skel{ position: relative; overflow: hidden; background: #e8edf5; border-radius: 8px; }
+.skel-title{ height: 18px; width: 60%; margin: 2px 0 10px; }
+.skel-line{ height: 12px; width: 92%; margin: 8px 0; }
+.skel-line.short{ width: 70%; }
+.skel-chip{ height: 16px; width: 64px; border-radius: 999px; }
+.skel::after{
+  content:""; position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.7), transparent);
+  animation: shimmer 1.2s infinite;
+}
+@keyframes shimmer{ 100% { transform: translateX(100%);} }
+@media (prefers-reduced-motion: reduce) {
+  .skel::after { animation: none; }
+}
 
 /* Empty state */
 .empty{ display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
